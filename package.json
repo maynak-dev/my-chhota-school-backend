@@ -3,14 +3,15 @@
   "version": "1.0.0",
   "description": "LMS Backend API",
   "main": "src/index.js",
-  "scripts": {
-    "dev": "nodemon src/index.js",
-    "start": "node src/index.js",
-    "build": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:generate": "prisma generate",
-    "prisma:seed": "node prisma/seed.js"
-  },
+"scripts": {
+  "dev": "nodemon src/index.js",
+  "start": "node src/index.js",
+  "build": "prisma generate",
+  "vercel-build": "prisma generate",
+  "prisma:migrate": "prisma migrate dev",
+  "prisma:generate": "prisma generate",
+  "prisma:seed": "node prisma/seed.js"
+},
   "prisma": {
     "seed": "node prisma/seed.js"
   },
