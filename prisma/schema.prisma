@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  SUB_ADMIN
+  STUDENT
+  PARENT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String
+  name         String
+  role         Role
+  phone        String?
+  profilePic   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  student      Student?
+  teacher      Teacher?
+  parent       Parent?
+  announcements Announcement[] @relation("CreatedBy")
+}
+
+model Student {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  rollNumber   String   @unique
+  batchId      String
+  batch        Batch    @relation(fields: [batchId], references: [id])
+  parentId     String?
+  parent       Parent?  @relation(fields: [parentId], references: [id])
+  fees         Fee[]
+  attendance   Attendance[]
+  results      Result[]
+  diaryEntries StudentDiary[]
+}
+
+model Teacher {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  subject      String
+  qualification String?
+  batches      Batch[]  @relation("TeacherBatches")
+  leaves       Leave[]
+  payroll      Payroll[]
+  timetable    Timetable[]
+  assignments  Assignment[]
+}
+
+model Parent {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  children     Student[]
+}
+
+model Batch {
+  id           String   @id @default(cuid())
+  name         String
+  courseId     String
+  course       Course   @relation(fields: [courseId], references: [id])
+  startDate    DateTime
+  endDate      DateTime?
+  teacherId    String?
+  teacher      Teacher? @relation("TeacherBatches", fields: [teacherId], references: [id])
+  students     Student[]
+  videos       Video[]
+  notes        Note[]
+  timetable    Timetable[]
+  assignments  Assignment[]
+  exams        Exam[]
+}
+
+model Course {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  batches      Batch[]
+}
+
+model Attendance {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id])
+  date         DateTime @default(now())
+  status       String   // PRESENT, ABSENT, LATE
+  markedBy     String   // teacherId
+  createdAt    DateTime @default(now())
+}
+
+model Fee {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id])
+  totalFees    Float
+  paidAmount   Float    @default(0)
+  dueDate      DateTime
+  status       String   // PAID, PENDING, OVERDUE
+  payments     Payment[]
+}
+
+model Payment {
+  id           String   @id @default(cuid())
+  feeId        String
+  fee          Fee      @relation(fields: [feeId], references: [id])
+  amount       Float
+  date         DateTime @default(now())
+  method       String   // CASH, ONLINE, CARD
+  receiptNo    String   @unique
+  transactionId String?
+}
+
+model Video {
+  id           String   @id @default(cuid())
+  title        String
+  url          String
+  batchId      String
+  batch        Batch    @relation(fields: [batchId], references: [id])
+  uploadedBy   String   // userId
+  duration     Int?
+  createdAt    DateTime @default(now())
+}
+
+model Note {
+  id           String   @id @default(cuid())
+  title        String
+  fileUrl      String
+  batchId      String
+  batch        Batch    @relation(fields: [batchId], references: [id])
+  type         String   // NOTES, WORKSHEET, HOMEWORK
+  uploadedBy   String
+  createdAt    DateTime @default(now())
+}
+
+model Announcement {
+  id           String   @id @default(cuid())
+  title        String
+  content      String
+  targetRole   Role?    // null = all
+  createdBy    String
+  creator      User     @relation("CreatedBy", fields: [createdBy], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+model Timetable {
+  id           String   @id @default(cuid())
+  batchId      String
+  batch        Batch    @relation(fields: [batchId], references: [id])
+  day          String   // MONDAY, TUESDAY, ...
+  subject      String
+  startTime    String   // "09:00"
+  endTime      String
+  teacherId    String?
+  teacher      Teacher? @relation(fields: [teacherId], references: [id])
+}
+
+model Assignment {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  dueDate      DateTime
+  fileUrl      String?
+  batchId      String
+  batch        Batch    @relation(fields: [batchId], references: [id])
+  createdBy    String   // teacherId
+  teacher      Teacher  @relation(fields: [createdBy], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+model Exam {
+  id           String   @id @default(cuid())
+  name         String
+  date         DateTime
+  maxMarks     Int
+  batchId      String
+  batch        Batch    @relation(fields: [batchId], references: [id])
+  results      Result[]
+}
+
+model Result {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id])
+  examId       String
+  exam         Exam     @relation(fields: [examId], references: [id])
+  marksObtained Float
+  feedback     String?
+}
+
+model Leave {
+  id           String   @id @default(cuid())
+  teacherId    String
+  teacher      Teacher  @relation(fields: [teacherId], references: [id])
+  startDate    DateTime
+  endDate      DateTime
+  reason       String
+  status       String   // PENDING, APPROVED, REJECTED
+}
+
+model Payroll {
+  id           String   @id @default(cuid())
+  teacherId    String
+  teacher      Teacher  @relation(fields: [teacherId], references: [id])
+  month        Int
+  year         Int
+  amount       Float
+  deductions   Float    @default(0)
+  netAmount    Float
+  paid         Boolean  @default(false)
+  paidAt       DateTime?
+}
+
+model Expense {
+  id           String   @id @default(cuid())
+  description  String
+  amount       Float
+  date         DateTime @default(now())
+  category     String
+  createdBy    String   // userId
+}
+
+model StudentDiary {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id])
+  date         DateTime @default(now())
+  content      String
+  type         String   // HOMEWORK, REMARK, BEHAVIOR
+  createdBy    String   // teacherId
+}
