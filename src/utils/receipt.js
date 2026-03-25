@@ -1,17 +1,22 @@
 const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
 
-const receiptsDir = path.join(__dirname, '../receipts');
-if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir);
-
-const generateReceipt = async (payment, student, fee) => {
+/**
+ * Generate a PDF receipt and return it as a buffer.
+ * @param {Object} payment - Payment record with amount, receiptNo, etc.
+ * @param {Object} student - Student object with user, batch, etc.
+ * @param {Object} fee - Fee record with totalFees, paidAmount, dueDate.
+ * @returns {Promise<Buffer>} - PDF buffer.
+ */
+const generateReceiptBuffer = async (payment, student, fee) => {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument();
-    const filePath = path.join(receiptsDir, `receipt_${payment.receiptNo}.pdf`);
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
+    const chunks = [];
 
+    doc.on('data', chunk => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    // Write content
     doc.fontSize(20).text('FEE RECEIPT', { align: 'center' });
     doc.moveDown();
     doc.fontSize(12);
@@ -31,9 +36,7 @@ const generateReceipt = async (payment, student, fee) => {
     doc.text('Thank you for your payment!', { align: 'center' });
 
     doc.end();
-    stream.on('finish', () => resolve(filePath));
-    stream.on('error', reject);
   });
 };
 
-module.exports = { generateReceipt };
+module.exports = { generateReceiptBuffer };
