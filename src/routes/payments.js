@@ -1,4 +1,132 @@
-// Download receipt (stream PDF directly)
+const express = require('express');
+const auth = require('../middleware/auth');
+const roleCheck = require('../middleware/roleCheck');
+const { PrismaClient } = require('@prisma/client');
+const { generateReceiptBuffer } = require('../utils/receipt');
+const { sendEmailWithAttachment } = require('../utils/email');
+
+const prisma = new PrismaClient();
+const router = express.Router();   // ✅ This line was missing
+
+// Record a payment (Admin/SubAdmin/Student/Parent)
+router.post('/', auth, async (req, res) => {
+  const { feeId, amount, method, transactionId } = req.body;
+  try {
+    const fee = await prisma.fee.findUnique({
+      where: { id: feeId },
+      include: {
+        student: {
+          include: {
+            user: true,
+            batch: true,
+            parent: { include: { user: true } }
+          }
+        }
+      }
+    });
+    if (!fee) return res.status(404).json({ error: 'Fee record not found' });
+
+    // Authorization
+    if (req.user.role === 'STUDENT') {
+      const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+      if (student?.id !== fee.studentId) return res.status(403).json({ error: 'Forbidden' });
+    } else if (req.user.role === 'PARENT') {
+      const parent = await prisma.parent.findUnique({ where: { userId: req.user.id }, include: { children: true } });
+      if (!parent.children.some(c => c.id === fee.studentId)) return res.status(403).json({ error: 'Forbidden' });
+    } else if (req.user.role !== 'ADMIN' && req.user.role !== 'SUB_ADMIN') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const receiptNo = `RCPT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const payment = await prisma.payment.create({
+      data: { feeId, amount, method, receiptNo, transactionId },
+    });
+
+    // Update fee record
+    const newPaidAmount = fee.paidAmount + amount;
+    let status = 'PENDING';
+    if (newPaidAmount >= fee.totalFees) status = 'PAID';
+    else if (new Date() > fee.dueDate) status = 'OVERDUE';
+    else status = 'PENDING';
+
+    await prisma.fee.update({
+      where: { id: feeId },
+      data: { paidAmount: newPaidAmount, status },
+    });
+
+    // Generate PDF buffer
+    const pdfBuffer = await generateReceiptBuffer(payment, fee.student, fee);
+
+    // Send email with attachment
+    const studentEmail = fee.student.user.email;
+    const parentEmail = fee.student.parent?.user?.email;
+
+    const emailHtml = `
+      <h2>Payment Received</h2>
+      <p>Dear ${fee.student.user.name},</p>
+      <p>Your payment of ₹${amount} has been successfully processed.</p>
+      <p>Receipt No: ${payment.receiptNo}</p>
+      <p>Please find the attached receipt for your records.</p>
+      <p>Thank you!</p>
+    `;
+
+    const attachment = {
+      filename: `receipt_${payment.receiptNo}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf',
+    };
+
+    if (studentEmail) {
+      await sendEmailWithAttachment(studentEmail, 'Fee Payment Receipt', emailHtml, [attachment]);
+    }
+    if (parentEmail && parentEmail !== studentEmail) {
+      await sendEmailWithAttachment(parentEmail, `Fee Payment Receipt for ${fee.student.user.name}`, emailHtml, [attachment]);
+    }
+
+    res.status(201).json({ ...payment, receiptUrl: `/api/payments/receipt/${payment.id}` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all payments (Admin only)
+router.get('/', auth, roleCheck('ADMIN'), async (req, res) => {
+  try {
+    const payments = await prisma.payment.findMany({
+      include: { fee: { include: { student: { include: { user: true } } } } },
+    });
+    res.json(payments);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get payments for a student
+router.get('/student/:studentId', auth, async (req, res) => {
+  const { studentId } = req.params;
+  // Authorization checks
+  if (req.user.role === 'STUDENT') {
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+    if (student?.id !== studentId) return res.status(403).json({ error: 'Forbidden' });
+  } else if (req.user.role === 'PARENT') {
+    const parent = await prisma.parent.findUnique({ where: { userId: req.user.id }, include: { children: true } });
+    if (!parent.children.some(c => c.id === studentId)) return res.status(403).json({ error: 'Forbidden' });
+  } else if (req.user.role !== 'ADMIN' && req.user.role !== 'SUB_ADMIN') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  try {
+    const payments = await prisma.payment.findMany({
+      where: { fee: { studentId } },
+      include: { fee: true },
+    });
+    res.json(payments);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Download receipt (stream PDF)
 router.get('/receipt/:paymentId', auth, async (req, res) => {
   const { paymentId } = req.params;
   try {
@@ -7,16 +135,14 @@ router.get('/receipt/:paymentId', auth, async (req, res) => {
       include: {
         fee: {
           include: {
-            student: {
-              include: { user: true, batch: true },
-            },
+            student: { include: { user: true, batch: true } },
           },
         },
       },
     });
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
 
-    // Authorization checks (same as before)
+    // Authorization (same as above)
     const studentId = payment.fee.studentId;
     if (req.user.role === 'STUDENT') {
       const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
@@ -28,10 +154,7 @@ router.get('/receipt/:paymentId', auth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    // Generate PDF buffer
     const pdfBuffer = await generateReceiptBuffer(payment, payment.fee.student, payment.fee);
-
-    // Send PDF to client
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=receipt_${payment.receiptNo}.pdf`);
     res.send(pdfBuffer);
@@ -40,3 +163,5 @@ router.get('/receipt/:paymentId', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+module.exports = router;
