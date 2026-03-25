@@ -43,6 +43,20 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// ✅ NEW: Get students of a batch
+router.get('/:id/students', auth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const students = await prisma.student.findMany({
+      where: { batchId: id },
+      include: { user: true },
+    });
+    res.json(students);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Create batch (Admin only)
 router.post('/', auth, roleCheck('ADMIN'), async (req, res) => {
   const { name, courseId, startDate, endDate, teacherId } = req.body;

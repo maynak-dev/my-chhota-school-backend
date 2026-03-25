@@ -18,7 +18,7 @@ router.get('/', auth, roleCheck('ADMIN'), async (req, res) => {
   }
 });
 
-// Get current teacher
+// Get current teacher (own profile)
 router.get('/me', auth, roleCheck('SUB_ADMIN', 'ADMIN'), async (req, res) => {
   try {
     const teacher = await prisma.teacher.findUnique({
@@ -32,7 +32,21 @@ router.get('/me', auth, roleCheck('SUB_ADMIN', 'ADMIN'), async (req, res) => {
   }
 });
 
-// Get teacher by ID
+// ✅ NEW: Get teacher's batches
+router.get('/me/batches', auth, roleCheck('SUB_ADMIN'), async (req, res) => {
+  try {
+    const teacher = await prisma.teacher.findUnique({
+      where: { userId: req.user.id },
+      include: { batches: true },
+    });
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+    res.json(teacher.batches);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get teacher by ID (Admin only)
 router.get('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
   const { id } = req.params;
   try {
