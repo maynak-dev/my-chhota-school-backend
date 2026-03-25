@@ -27,7 +27,26 @@ const dashboardRoutes = require('./routes/dashboard');
 
 const app = express();
 
-app.use(cors());
+// ✅ CORS configuration – allow only your frontend origin
+const allowedOrigins = [
+  'https://my-chhota-school.vercel.app',
+  'http://localhost:3000',      // local dev
+  'http://localhost:5173',      // Vite default
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,   // if you use cookies or authorization headers
+}));
+
 app.use(express.json());
 
 // Routes
