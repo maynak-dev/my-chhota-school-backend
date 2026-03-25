@@ -244,7 +244,6 @@ async function main() {
   const students = [student1, student2, student3];
   for (const date of attendanceDates) {
     for (const student of students) {
-      // Random status (mostly present)
       const status = Math.random() > 0.2 ? 'PRESENT' : (Math.random() > 0.5 ? 'ABSENT' : 'LATE');
       await prisma.attendance.create({
         data: {
@@ -327,7 +326,7 @@ async function main() {
         title: 'Introduction to Algebra',
         url: 'https://example.com/video1.mp4',
         batchId: batch10A.id,
-        uploadedBy: teacher1.id,
+        uploadedBy: teacher1User.id,          // Use user ID
         duration: 3600,
         createdAt: new Date('2025-04-05'),
       },
@@ -335,7 +334,7 @@ async function main() {
         title: 'Quadratic Equations',
         url: 'https://example.com/video2.mp4',
         batchId: batch10A.id,
-        uploadedBy: teacher1.id,
+        uploadedBy: teacher1User.id,          // Use user ID
         duration: 2700,
         createdAt: new Date('2025-04-12'),
       },
@@ -343,7 +342,7 @@ async function main() {
         title: 'Newton\'s Laws of Motion',
         url: 'https://example.com/video3.mp4',
         batchId: batch10B.id,
-        uploadedBy: teacher2.id,
+        uploadedBy: teacher2User.id,          // Use user ID
         duration: 4200,
         createdAt: new Date('2025-04-08'),
       },
@@ -360,7 +359,7 @@ async function main() {
         fileUrl: 'https://example.com/notes/algebra_ch1.pdf',
         batchId: batch10A.id,
         type: 'NOTES',
-        uploadedBy: teacher1.id,
+        uploadedBy: teacher1User.id,          // Use user ID
         createdAt: new Date('2025-04-03'),
       },
       {
@@ -368,7 +367,7 @@ async function main() {
         fileUrl: 'https://example.com/worksheets/quadratic.pdf',
         batchId: batch10A.id,
         type: 'WORKSHEET',
-        uploadedBy: teacher1.id,
+        uploadedBy: teacher1User.id,          // Use user ID
         createdAt: new Date('2025-04-10'),
       },
       {
@@ -376,37 +375,37 @@ async function main() {
         fileUrl: 'https://example.com/notes/physics_formulas.pdf',
         batchId: batch10B.id,
         type: 'NOTES',
-        uploadedBy: teacher2.id,
+        uploadedBy: teacher2User.id,          // Use user ID
         createdAt: new Date('2025-04-07'),
       },
     ],
   });
 
   // 12. Assignments
-  console.log('Creating assignments...');
+ // 12. Assignments
+console.log('Creating assignments...');
 
-  await prisma.assignment.createMany({
-    data: [
-      {
-        title: 'Algebra Homework 1',
-        description: 'Solve problems 1-10 from Chapter 1',
-        dueDate: new Date('2025-05-20'),
-        fileUrl: 'https://example.com/assignments/algebra_hw1.pdf',
-        batchId: batch10A.id,
-        createdBy: teacher1.id,
-        createdAt: new Date('2025-04-15'),
-      },
-      {
-        title: 'Physics Lab Report',
-        description: 'Write a report on the experiment',
-        dueDate: new Date('2025-05-25'),
-        batchId: batch10B.id,
-        createdBy: teacher2.id,
-        createdAt: new Date('2025-04-18'),
-      },
-    ],
-  });
-
+await prisma.assignment.createMany({
+  data: [
+    {
+      title: 'Algebra Homework 1',
+      description: 'Solve problems 1-10 from Chapter 1',
+      dueDate: new Date('2025-05-20'),
+      fileUrl: 'https://example.com/assignments/algebra_hw1.pdf',
+      batchId: batch10A.id,
+      createdBy: teacher1.id,      // ✅ teacher record ID
+      createdAt: new Date('2025-04-15'),
+    },
+    {
+      title: 'Physics Lab Report',
+      description: 'Write a report on the experiment',
+      dueDate: new Date('2025-05-25'),
+      batchId: batch10B.id,
+      createdBy: teacher2.id,      // ✅ teacher record ID
+      createdAt: new Date('2025-04-18'),
+    },
+  ],
+});
   // 13. Exams
   console.log('Creating exams...');
 
@@ -446,7 +445,7 @@ async function main() {
       {
         title: 'School Holiday',
         content: 'School will remain closed on May 1st for Labour Day.',
-        targetRole: null, // all
+        targetRole: null,
         createdBy: admin.id,
         createdAt: new Date('2025-04-20'),
       },
@@ -461,7 +460,7 @@ async function main() {
         title: 'Exam Schedule Released',
         content: 'Mid-term exams will start from June 15th. Check timetable.',
         targetRole: 'STUDENT',
-        createdBy: teacher1.id,
+        createdBy: teacher1User.id,           // Use user ID
         createdAt: new Date('2025-04-25'),
       },
     ],
@@ -477,7 +476,7 @@ async function main() {
         date: new Date('2025-04-18'),
         content: 'Completed algebra assignment on time.',
         type: 'REMARK',
-        createdBy: teacher1.id,
+        createdBy: teacher1.id,               // This is teacher record ID, but `createdBy` in StudentDiary is String (teacher ID). We keep it as teacher ID because it references the teacher record, not user. Check schema: StudentDiary.createdBy is a String, no relation. So it's fine.
       },
       {
         studentId: student2.id,
