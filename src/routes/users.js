@@ -1,4 +1,5 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const auth = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const { PrismaClient } = require('@prisma/client');
@@ -59,6 +60,37 @@ router.delete('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
   try {
     await prisma.user.delete({ where: { id } });
     res.json({ message: 'User deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a staff / teacher user (Admin only)
+router.post('/', auth, roleCheck('ADMIN'), async (req, res) => {
+  const { name, email, password, phone, role, subject, qualification } = req.body;
+  if (!name || !email || !password || !role) {
+    return res.status(400).json({ error: 'Name, email, password, and role are required' });
+  }
+  const allowedRoles = ['ADMIN', 'SUB_ADMIN'];
+  if (!allowedRoles.includes(role)) {
+    return res.status(400).json({ error: 'Role must be ADMIN or SUB_ADMIN (Teacher)' });
+  }
+  try {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return res.status(400).json({ error: 'Email already registered' });
+
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: { name, email, password: hashed, role, phone: phone || null },
+    });
+
+    if (role === 'SUB_ADMIN') {
+      await prisma.teacher.create({
+        data: { userId: user.id, subject: subject || 'General', qualification: qualification || null },
+      });
+    }
+
+    res.status(201).json({ id: user.id, name: user.name, email: user.email, role: user.role, phone: user.phone });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

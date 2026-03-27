@@ -51,7 +51,7 @@ router.post('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
     const fee = await prisma.fee.create({
       data: {
         studentId,
-        totalFees,
+        totalFees: parseFloat(totalFees),
         dueDate: new Date(dueDate),
         status: 'PENDING',
       },
@@ -74,7 +74,7 @@ router.put('/:id', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
     const fee = await prisma.fee.update({
       where: { id },
-      data: { totalFees, dueDate: dueDate ? new Date(dueDate) : undefined, status },
+      data: { totalFees: totalFees ? parseFloat(totalFees) : undefined, dueDate: dueDate ? new Date(dueDate) : undefined, status },
     });
     res.json(fee);
   } catch (err) {
