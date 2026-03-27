@@ -42,6 +42,22 @@ router.post('/', auth, async (req, res) => {
       data: { feeId, amount, method, receiptNo, transactionId },
     });
 
+    // Create admin notification if payment is made by PARENT
+    if (req.user.role === 'PARENT') {
+      await prisma.notification.create({
+        data: {
+          type: 'FEE_PAYMENT',
+          title: 'Fee Payment Received',
+          message: `Parent of ${fee.student.user.name} has paid \u20B9${amount} via ${method}. Receipt: ${receiptNo}. Please verify and update fee status if needed.`,
+          paymentId: payment.id,
+          studentId: fee.student.id,
+          studentName: fee.student.user.name,
+          amount: amount,
+          isRead: false,
+        },
+      });
+    }
+
     // Update fee record
     const newPaidAmount = fee.paidAmount + amount;
     let status = 'PENDING';

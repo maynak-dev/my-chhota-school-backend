@@ -240,3 +240,16 @@ model StudentDiary {
   type         String   // HOMEWORK, REMARK, BEHAVIOR
   createdBy    String   // teacherId
 }
+
+model Notification {
+  id          String   @id @default(cuid())
+  type        String   // FEE_PAYMENT
+  title       String
+  message     String
+  isRead      Boolean  @default(false)
+  paymentId   String?
+  studentId   String?
+  studentName String?
+  amount      Float?
+  createdAt   DateTime @default(now())
+}

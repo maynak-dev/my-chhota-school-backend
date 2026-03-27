@@ -24,6 +24,7 @@ const payrollRoutes = require('./routes/payroll');
 const expenseRoutes = require('./routes/expenses');
 const diaryRoutes = require('./routes/diary');
 const dashboardRoutes = require('./routes/dashboard');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 
@@ -72,6 +73,7 @@ app.use('/api/payroll', payrollRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/diary', diaryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {
   res.send('LMS API is running');

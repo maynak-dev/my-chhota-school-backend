@@ -73,4 +73,58 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+// Admit student with parent credentials (Admin only)
+router.post('/admit', auth, async (req, res) => {
+  const {
+    // Student fields
+    studentName, studentEmail, studentPassword, studentPhone, batchId, rollNumber,
+    // Parent fields (optional)
+    parentName, parentEmail, parentPassword,
+  } = req.body;
+
+  if (!studentName || !studentEmail || !studentPassword || !batchId) {
+    return res.status(400).json({ error: 'Student name, email, password, and batch are required' });
+  }
+
+  try {
+    let parentId = null;
+
+    // Create parent user if credentials provided
+    if (parentName && parentEmail && parentPassword) {
+      const existingParent = await prisma.user.findUnique({ where: { email: parentEmail } });
+      if (existingParent) return res.status(400).json({ error: 'Parent email already registered' });
+
+      const hashedParentPass = await bcrypt.hash(parentPassword, 10);
+      const parentUser = await prisma.user.create({
+        data: { email: parentEmail, password: hashedParentPass, name: parentName, role: 'PARENT' },
+      });
+      const parent = await prisma.parent.create({ data: { userId: parentUser.id } });
+      parentId = parent.id;
+    }
+
+    // Create student user
+    const existingStudent = await prisma.user.findUnique({ where: { email: studentEmail } });
+    if (existingStudent) return res.status(400).json({ error: 'Student email already registered' });
+
+    const hashedStudentPass = await bcrypt.hash(studentPassword, 10);
+    const studentUser = await prisma.user.create({
+      data: { email: studentEmail, password: hashedStudentPass, name: studentName, role: 'STUDENT', phone: studentPhone || null },
+    });
+
+    const student = await prisma.student.create({
+      data: {
+        userId: studentUser.id,
+        rollNumber: rollNumber || `STU${Date.now()}`,
+        batchId,
+        parentId,
+      },
+      include: { user: true, batch: true },
+    });
+
+    res.status(201).json({ message: 'Student admitted successfully', student });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
