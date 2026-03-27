@@ -6,11 +6,17 @@ const { generateReceiptBuffer } = require('../utils/receipt');
 const { sendEmailWithAttachment } = require('../utils/email');
 
 const prisma = new PrismaClient();
-const router = express.Router();   // ✅ This line was missing
+const router = express.Router();
 
-// Record a payment (Admin/SubAdmin/Student/Parent)
+// Record a payment (Admin/SubAdmin/Parent ONLY — Students are NOT allowed)
 router.post('/', auth, async (req, res) => {
   const { feeId, amount, method, transactionId } = req.body;
+
+  // Block students from making payments
+  if (req.user.role === 'STUDENT') {
+    return res.status(403).json({ error: 'Students cannot make payments. Please ask your parent/guardian to pay.' });
+  }
+
   try {
     const fee = await prisma.fee.findUnique({
       where: { id: feeId },
@@ -27,12 +33,9 @@ router.post('/', auth, async (req, res) => {
     if (!fee) return res.status(404).json({ error: 'Fee record not found' });
 
     // Authorization
-    if (req.user.role === 'STUDENT') {
-      const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
-      if (student?.id !== fee.studentId) return res.status(403).json({ error: 'Forbidden' });
-    } else if (req.user.role === 'PARENT') {
+    if (req.user.role === 'PARENT') {
       const parent = await prisma.parent.findUnique({ where: { userId: req.user.id }, include: { children: true } });
-      if (!parent.children.some(c => c.id === fee.studentId)) return res.status(403).json({ error: 'Forbidden' });
+      if (!parent || !parent.children.some(c => c.id === fee.studentId)) return res.status(403).json({ error: 'Forbidden' });
     } else if (req.user.role !== 'ADMIN' && req.user.role !== 'SUB_ADMIN') {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -121,7 +124,6 @@ router.get('/', auth, roleCheck('ADMIN'), async (req, res) => {
 // Get payments for a student
 router.get('/student/:studentId', auth, async (req, res) => {
   const { studentId } = req.params;
-  // Authorization checks
   if (req.user.role === 'STUDENT') {
     const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (student?.id !== studentId) return res.status(403).json({ error: 'Forbidden' });
@@ -158,7 +160,6 @@ router.get('/receipt/:paymentId', auth, async (req, res) => {
     });
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
 
-    // Authorization (same as above)
     const studentId = payment.fee.studentId;
     if (req.user.role === 'STUDENT') {
       const student = await prisma.student.findUnique({ where: { userId: req.user.id } });

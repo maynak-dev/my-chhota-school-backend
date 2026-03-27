@@ -6,10 +6,15 @@ const prisma = new PrismaClient();
 
 const router = express.Router();
 
-// Get all notifications (Admin only)
+// Get all notifications (Admin and SUB_ADMIN, but teachers can't see payment notifications)
 router.get('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
+    const where = req.user.role === 'SUB_ADMIN'
+      ? { type: { not: 'FEE_PAYMENT' } }
+      : {};
+
     const notifications = await prisma.notification.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
     });
     res.json(notifications);
@@ -18,10 +23,14 @@ router.get('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   }
 });
 
-// Get unread count (Admin only)
+// Get unread count (exclude payment notifications for teachers)
 router.get('/unread-count', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
-    const count = await prisma.notification.count({ where: { isRead: false } });
+    const where = { isRead: false };
+    if (req.user.role === 'SUB_ADMIN') {
+      where.type = { not: 'FEE_PAYMENT' };
+    }
+    const count = await prisma.notification.count({ where });
     res.json({ count });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -44,7 +53,11 @@ router.put('/:id/read', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) 
 // Mark all as read
 router.put('/mark-all-read', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
-    await prisma.notification.updateMany({ data: { isRead: true } });
+    const where = {};
+    if (req.user.role === 'SUB_ADMIN') {
+      where.type = { not: 'FEE_PAYMENT' };
+    }
+    await prisma.notification.updateMany({ where, data: { isRead: true } });
     res.json({ message: 'All notifications marked as read' });
   } catch (err) {
     res.status(500).json({ error: err.message });

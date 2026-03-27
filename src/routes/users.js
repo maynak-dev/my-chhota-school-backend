@@ -22,7 +22,6 @@ router.get('/', auth, roleCheck('ADMIN'), async (req, res) => {
 // Get single user
 router.get('/:id', auth, async (req, res) => {
   const { id } = req.params;
-  // Only allow admin or self
   if (req.user.id !== id && req.user.role !== 'ADMIN')
     return res.status(403).json({ error: 'Forbidden' });
   try {
@@ -58,9 +57,62 @@ router.put('/:id', auth, async (req, res) => {
 router.delete('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
   const { id } = req.params;
   try {
+    // Find user to check role-specific related data
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: { student: true, teacher: true, parent: true },
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // If user is a student, delete all student-related records
+    if (user.student) {
+      const studentId = user.student.id;
+      await prisma.studentDiary.deleteMany({ where: { studentId } });
+      await prisma.result.deleteMany({ where: { studentId } });
+      await prisma.attendance.deleteMany({ where: { studentId } });
+      // Delete payments linked to fees, then fees
+      const fees = await prisma.fee.findMany({ where: { studentId } });
+      for (const fee of fees) {
+        await prisma.payment.deleteMany({ where: { feeId: fee.id } });
+      }
+      await prisma.fee.deleteMany({ where: { studentId } });
+      // Remove notifications referencing this student
+      await prisma.notification.deleteMany({ where: { studentId } });
+      await prisma.student.delete({ where: { id: studentId } });
+    }
+
+    // If user is a teacher, delete all teacher-related records
+    if (user.teacher) {
+      const teacherId = user.teacher.id;
+      await prisma.assignment.deleteMany({ where: { createdBy: teacherId } });
+      await prisma.timetable.deleteMany({ where: { teacherId } });
+      await prisma.leave.deleteMany({ where: { teacherId } });
+      await prisma.payroll.deleteMany({ where: { teacherId } });
+      // Unlink batches from this teacher
+      await prisma.batch.updateMany({
+        where: { teacherId },
+        data: { teacherId: null },
+      });
+      await prisma.teacher.delete({ where: { id: teacherId } });
+    }
+
+    // If user is a parent, unlink children then delete parent
+    if (user.parent) {
+      await prisma.student.updateMany({
+        where: { parentId: user.parent.id },
+        data: { parentId: null },
+      });
+      await prisma.parent.delete({ where: { id: user.parent.id } });
+    }
+
+    // Delete announcements created by this user
+    await prisma.announcement.deleteMany({ where: { createdBy: id } });
+
+    // Finally delete the user
     await prisma.user.delete({ where: { id } });
     res.json({ message: 'User deleted' });
   } catch (err) {
+    console.error('Delete user error:', err);
     res.status(500).json({ error: err.message });
   }
 });
