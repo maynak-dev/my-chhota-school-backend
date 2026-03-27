@@ -6,6 +6,41 @@ const prisma = new PrismaClient();
 
 const router = express.Router();
 
+// ✅ Attendance Report (Admin)
+router.get('/report', auth, roleCheck('ADMIN'), async (req, res) => {
+  try {
+    const students = await prisma.student.findMany({
+      include: {
+        user: { select: { name: true } },
+        batch: { select: { name: true } },
+        attendance: true,
+      },
+    });
+
+    const report = students.map((s) => {
+      const total = s.attendance.length;
+      const present = s.attendance.filter((a) => a.status === 'PRESENT').length;
+      const absent = s.attendance.filter((a) => a.status === 'ABSENT').length;
+      const late = s.attendance.filter((a) => a.status === 'LATE').length;
+      const percentage = total > 0 ? ((present / total) * 100).toFixed(1) + '%' : 'N/A';
+      return {
+        Student: s.user.name,
+        'Roll No': s.rollNumber,
+        Batch: s.batch?.name || '—',
+        Present: present,
+        Absent: absent,
+        Late: late,
+        Total: total,
+        'Attendance %': percentage,
+      };
+    });
+
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get attendance for a batch (Admin/Teacher)
 router.get('/batch/:batchId', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   const { batchId } = req.params;
@@ -25,7 +60,6 @@ router.get('/batch/:batchId', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req,
 router.get('/student/:studentId', auth, async (req, res) => {
   const { studentId } = req.params;
   const { startDate, endDate } = req.query;
-  // Authorization
   if (req.user.role === 'STUDENT') {
     const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (student?.id !== studentId) return res.status(403).json({ error: 'Forbidden' });
@@ -67,7 +101,7 @@ router.post('/', auth, roleCheck('SUB_ADMIN'), async (req, res) => {
 
 // Bulk mark attendance (Teacher)
 router.post('/bulk', auth, roleCheck('SUB_ADMIN'), async (req, res) => {
-  const { entries } = req.body; // array of {studentId, status, date, markedBy}
+  const { entries } = req.body;
   try {
     const created = await prisma.$transaction(
       entries.map(entry =>

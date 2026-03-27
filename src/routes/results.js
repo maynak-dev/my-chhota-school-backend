@@ -6,10 +6,35 @@ const prisma = new PrismaClient();
 
 const router = express.Router();
 
+// ✅ Performance Report (Admin)
+router.get('/report', auth, roleCheck('ADMIN'), async (req, res) => {
+  try {
+    const results = await prisma.result.findMany({
+      include: {
+        student: { include: { user: { select: { name: true } }, batch: { select: { name: true } } } },
+        exam: true,
+      },
+    });
+
+    const report = results.map((r) => ({
+      Student: r.student.user.name,
+      Batch: r.student.batch?.name || '—',
+      Exam: r.exam.name,
+      'Max Marks': r.exam.maxMarks,
+      'Marks Obtained': r.marksObtained,
+      'Percentage': ((r.marksObtained / r.exam.maxMarks) * 100).toFixed(1) + '%',
+      Feedback: r.feedback || '—',
+    }));
+
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get results for a student
 router.get('/student/:studentId', auth, async (req, res) => {
   const { studentId } = req.params;
-  // Authorization checks
   if (req.user.role === 'STUDENT') {
     const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (student?.id !== studentId) return res.status(403).json({ error: 'Forbidden' });
@@ -35,7 +60,6 @@ router.get('/student/:studentId', auth, async (req, res) => {
 router.post('/', auth, roleCheck('SUB_ADMIN'), async (req, res) => {
   const { studentId, examId, marksObtained, feedback } = req.body;
   try {
-    // Check if result already exists
     let result = await prisma.result.findFirst({
       where: { studentId, examId },
     });
