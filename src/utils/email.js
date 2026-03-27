@@ -22,4 +22,19 @@ const sendEmail = async (to, subject, html) => {
   }
 };
 
-module.exports = { sendEmail };
+const sendEmailWithAttachment = async (to, subject, html, attachments = []) => {
+  try {
+    await transporter.sendMail({
+      from: `"LMS" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html,
+      attachments,
+    });
+    console.log(`Email with attachment sent to ${to}`);
+  } catch (err) {
+    console.error('Email with attachment error:', err);
+  }
+};
+
+module.exports = { sendEmail, sendEmailWithAttachment };
