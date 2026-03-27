@@ -18,6 +18,20 @@ router.get('/', auth, roleCheck('ADMIN', 'SUB_ADMIN', 'TEACHER'), async (req, re
   }
 });
 
+// Get current student (based on logged in user) — MUST be before /:id
+router.get('/me', auth, roleCheck('STUDENT'), async (req, res) => {
+  try {
+    const student = await prisma.student.findUnique({
+      where: { userId: req.user.id },
+      include: { user: true, batch: true, parent: { include: { user: true } }, fees: true, attendance: true, results: true },
+    });
+    if (!student) return res.status(404).json({ error: 'Student profile not found' });
+    res.json(student);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get student by ID
 router.get('/:id', auth, async (req, res) => {
   const { id } = req.params;
@@ -27,26 +41,11 @@ router.get('/:id', auth, async (req, res) => {
       include: { user: true, batch: true, parent: { include: { user: true } }, fees: true, attendance: true, results: true },
     });
     if (!student) return res.status(404).json({ error: 'Student not found' });
-    // Authorization: admin, teacher, or the student's own user or parent
     if (req.user.role === 'STUDENT' && student.userId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
     if (req.user.role === 'PARENT') {
       const parent = await prisma.parent.findUnique({ where: { userId: req.user.id }, include: { children: true } });
       if (!parent.children.some(c => c.id === id)) return res.status(403).json({ error: 'Forbidden' });
     }
-    res.json(student);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Get current student (based on logged in user)
-router.get('/me', auth, roleCheck('STUDENT'), async (req, res) => {
-  try {
-    const student = await prisma.student.findUnique({
-      where: { userId: req.user.id },
-      include: { user: true, batch: true, parent: { include: { user: true } }, fees: true, attendance: true, results: true },
-    });
-    if (!student) return res.status(404).json({ error: 'Student profile not found' });
     res.json(student);
   } catch (err) {
     res.status(500).json({ error: err.message });
