@@ -6,13 +6,11 @@ const prisma = new PrismaClient();
 
 const router = express.Router();
 
-// Get all notifications (Admin and SUB_ADMIN, but teachers can't see payment notifications)
 router.get('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
     const where = req.user.role === 'SUB_ADMIN'
       ? { type: { not: 'FEE_PAYMENT' } }
       : {};
-
     const notifications = await prisma.notification.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -23,7 +21,24 @@ router.get('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   }
 });
 
-// Get unread count (exclude payment notifications for teachers)
+router.get('/my', auth, async (req, res) => {
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: {
+        OR: [
+          { targetRole: null },
+          { targetRole: req.user.role },
+        ],
+        type: 'ANNOUNCEMENT',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(notifications);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/unread-count', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
     const where = { isRead: false };
@@ -37,7 +52,6 @@ router.get('/unread-count', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, r
   }
 });
 
-// Send a broadcast notification (Admin only)
 router.post('/', auth, roleCheck('ADMIN'), async (req, res) => {
   const { title, message, targetRole } = req.body;
   if (!title || !message) {
@@ -49,6 +63,7 @@ router.post('/', auth, roleCheck('ADMIN'), async (req, res) => {
         type: 'ANNOUNCEMENT',
         title,
         message,
+        targetRole: targetRole || null,
         isRead: false,
       },
     });
@@ -58,7 +73,6 @@ router.post('/', auth, roleCheck('ADMIN'), async (req, res) => {
   }
 });
 
-// Mark notification as read
 router.put('/:id/read', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
     const notification = await prisma.notification.update({
@@ -71,7 +85,6 @@ router.put('/:id/read', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) 
   }
 });
 
-// Mark all as read
 router.put('/mark-all-read', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
     const where = {};
