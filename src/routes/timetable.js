@@ -13,7 +13,10 @@ router.get('/batch/:batchId', auth, async (req, res) => {
     const timetable = await prisma.timetable.findMany({
       where: { batchId },
       include: { teacher: { include: { user: true } } },
-      orderBy: { day: 'asc', startTime: 'asc' },
+      orderBy: [
+                { day: 'asc'},
+                { startTime: 'asc' },
+              ]
     });
     res.json(timetable);
   } catch (err) {
