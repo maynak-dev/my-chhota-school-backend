@@ -2,19 +2,33 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const { PrismaClient } = require('@prisma/client');
-const { generateReceiptBuffer } = require('../utils/receipt');
-const { sendEmailWithAttachment, sendEmail } = require('../utils/email');
-
+const { sendEmail, sendEmailWithAttachment } = require('../utils/email');
+const { generateReceiptBuffer } = require('../utils/receipt'); // make sure this utility exists
 const prisma = new PrismaClient();
 const router = express.Router();
 
-// ✅ Create a payment request (Parent only – Students not allowed)
+const generateReceiptNo = () => `RCPT-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+// ✅ Create a payment request (Parents or Admins only – Students blocked)
 router.post('/', auth, async (req, res) => {
   const { feeId, amount, method, transactionId } = req.body;
+  const user = req.user;
+
+  // Basic validation
+  if (!feeId || !amount || !method) {
+    return res.status(400).json({ error: 'Missing required fields: feeId, amount, method' });
+  }
+  if (isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Amount must be a positive number' });
+  }
+  const validMethods = ['CASH', 'ONLINE', 'CARD'];
+  if (!validMethods.includes(method)) {
+    return res.status(400).json({ error: `Invalid method. Allowed: ${validMethods.join(', ')}` });
+  }
 
   // Block students
-  if (req.user.role === 'STUDENT') {
-    return res.status(403).json({ error: 'Students cannot make payments. Please ask your parent/guardian to pay.' });
+  if (user.role === 'STUDENT') {
+    return res.status(403).json({ error: 'Students cannot make payments. Please ask your parent/guardian.' });
   }
 
   try {
@@ -24,7 +38,6 @@ router.post('/', auth, async (req, res) => {
         student: {
           include: {
             user: true,
-            batch: true,
             parent: { include: { user: true } }
           }
         }
@@ -32,25 +45,27 @@ router.post('/', auth, async (req, res) => {
     });
     if (!fee) return res.status(404).json({ error: 'Fee record not found' });
 
-    // Authorization: only PARENT of that student or ADMIN/SUB_ADMIN
-    if (req.user.role === 'PARENT') {
+    // Authorization
+    if (user.role === 'PARENT') {
       const parent = await prisma.parent.findUnique({
-        where: { userId: req.user.id },
+        where: { userId: user.id },
         include: { children: true }
       });
       if (!parent || !parent.children.some(c => c.id === fee.studentId)) {
-        return res.status(403).json({ error: 'Forbidden' });
+        return res.status(403).json({ error: 'You are not authorized to pay for this student' });
       }
-    } else if (req.user.role !== 'ADMIN' && req.user.role !== 'SUB_ADMIN') {
+    } else if (user.role !== 'ADMIN' && user.role !== 'SUB_ADMIN') {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    // Check amount not exceeding balance
+    // Check balance
     const balance = fee.totalFees - fee.paidAmount;
-    if (amount > balance) return res.status(400).json({ error: 'Amount exceeds due balance' });
+    if (amount > balance) {
+      return res.status(400).json({ error: `Amount exceeds due balance of ₹${balance}` });
+    }
 
-    // Create payment with PENDING status
-    const receiptNo = `RCPT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // Create payment record
+    const receiptNo = generateReceiptNo();
     const payment = await prisma.payment.create({
       data: {
         feeId,
@@ -62,32 +77,32 @@ router.post('/', auth, async (req, res) => {
       },
     });
 
-    // Notify admins
+    // Notify admins (non-blocking)
     const admins = await prisma.user.findMany({
       where: { role: 'ADMIN' },
       select: { email: true }
     });
-    for (const admin of admins) {
-      await sendEmail(
+    admins.forEach(admin => {
+      sendEmail(
         admin.email,
         'New Fee Payment Request',
         `A payment of ₹${amount} has been initiated for student ${fee.student.user.name} (${fee.student.id}). Receipt: ${receiptNo}. Please verify and approve/reject.`
-      );
-    }
+      ).catch(console.error);
+    });
 
-    // Create notification in DB for admin panel
+    // In-app notification for admins
     await prisma.notification.create({
       data: {
         type: 'FEE_PAYMENT',
         title: 'Payment Pending Approval',
-        message: `Parent of ${fee.student.user.name} paid ₹${amount} via ${method}. Receipt: ${receiptNo}. Please approve.`,
+        message: `Parent of ${fee.student.user.name} paid ₹${amount} via ${method}. Receipt: ${receiptNo}.`,
         paymentId: payment.id,
         studentId: fee.student.id,
         studentName: fee.student.user.name,
         amount: amount,
         isRead: false,
-      },
-    });
+      }
+    }).catch(console.error);
 
     res.status(201).json(payment);
   } catch (err) {
@@ -113,27 +128,28 @@ router.get('/', auth, async (req, res) => {
           fee: {
             include: {
               student: { include: { user: true } },
-            },
-          },
+            }
+          }
         },
         orderBy: { createdAt: 'desc' },
       });
       return res.json(payments);
     }
 
-    // For Student or Parent
     if (user.role === 'STUDENT') {
       const student = await prisma.student.findUnique({ where: { userId: user.id } });
-      if (!student) return res.status(403).json({ error: 'Student not found' });
+      if (!student) return res.status(403).json({ error: 'Student profile not found' });
       where.fee = { studentId: student.id };
     } else if (user.role === 'PARENT') {
       const parent = await prisma.parent.findUnique({
         where: { userId: user.id },
-        include: { children: true },
+        include: { children: true }
       });
-      if (!parent) return res.status(403).json({ error: 'Parent not found' });
+      if (!parent) return res.status(403).json({ error: 'Parent profile not found' });
       const childIds = parent.children.map(c => c.id);
-      if (studentId && !childIds.includes(studentId)) return res.status(403).json({ error: 'Forbidden' });
+      if (studentId && !childIds.includes(studentId)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
       where.fee = { studentId: studentId ? studentId : { in: childIds } };
     } else {
       return res.status(403).json({ error: 'Forbidden' });
@@ -145,13 +161,14 @@ router.get('/', auth, async (req, res) => {
         fee: {
           include: {
             student: { include: { user: true } },
-          },
-        },
+          }
+        }
       },
       orderBy: { createdAt: 'desc' },
     });
     res.json(payments);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -171,10 +188,10 @@ router.put('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
       include: {
         fee: {
           include: {
-            student: { include: { user: true, parent: { include: { user: true } } } },
-          },
-        },
-      },
+            student: { include: { user: true, parent: { include: { user: true } } } }
+          }
+        }
+      }
     });
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
     if (payment.status !== 'PENDING') {
@@ -190,10 +207,16 @@ router.put('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
     if (status === 'APPROVED') {
       // Update fee record
       const newPaidAmount = payment.fee.paidAmount + payment.amount;
-      let feeStatus = 'PENDING';
-      if (newPaidAmount >= payment.fee.totalFees) feeStatus = 'PAID';
-      else if (new Date() > payment.fee.dueDate) feeStatus = 'OVERDUE';
-      else feeStatus = 'PENDING';
+      const totalFees = payment.fee.totalFees;
+      let feeStatus = payment.fee.status;
+
+      if (newPaidAmount >= totalFees) {
+        feeStatus = 'PAID';
+      } else if (new Date() > payment.fee.dueDate) {
+        feeStatus = 'OVERDUE';
+      } else {
+        feeStatus = 'PENDING';
+      }
 
       await prisma.fee.update({
         where: { id: payment.feeId },
@@ -203,10 +226,15 @@ router.put('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
         },
       });
 
-      // Generate PDF receipt
-      const pdfBuffer = await generateReceiptBuffer(updatedPayment, payment.fee.student, payment.fee);
+      // Generate PDF receipt (if utility exists)
+      let pdfBuffer = null;
+      try {
+        pdfBuffer = await generateReceiptBuffer(updatedPayment, payment.fee.student, payment.fee);
+      } catch (err) {
+        console.error('Receipt generation failed:', err);
+      }
 
-      // Send email with receipt to student and parent
+      // Send email with receipt
       const studentEmail = payment.fee.student.user.email;
       const parentEmail = payment.fee.student.parent?.user?.email;
       const emailHtml = `
@@ -214,23 +242,24 @@ router.put('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
         <p>Dear ${payment.fee.student.user.name},</p>
         <p>Your payment of ₹${payment.amount} has been approved.</p>
         <p>Receipt No: ${payment.receiptNo}</p>
-        <p>Please find the attached receipt for your records.</p>
+        <p>Fee status: ${feeStatus}</p>
+        ${pdfBuffer ? '<p>Please find attached receipt.</p>' : ''}
         <p>Thank you!</p>
       `;
-      const attachment = {
-        filename: `receipt_${payment.receiptNo}.pdf`,
-        content: pdfBuffer,
-        contentType: 'application/pdf',
-      };
-
-      if (studentEmail) {
-        await sendEmailWithAttachment(studentEmail, 'Fee Payment Receipt', emailHtml, [attachment]);
-      }
-      if (parentEmail && parentEmail !== studentEmail) {
-        await sendEmailWithAttachment(parentEmail, `Fee Payment Receipt for ${payment.fee.student.user.name}`, emailHtml, [attachment]);
+      if (pdfBuffer) {
+        const attachment = {
+          filename: `receipt_${payment.receiptNo}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        };
+        if (studentEmail) await sendEmailWithAttachment(studentEmail, 'Fee Payment Receipt', emailHtml, [attachment]);
+        if (parentEmail && parentEmail !== studentEmail) await sendEmailWithAttachment(parentEmail, `Fee Payment Receipt for ${payment.fee.student.user.name}`, emailHtml, [attachment]);
+      } else {
+        if (studentEmail) await sendEmail(studentEmail, 'Payment Approved', emailHtml);
+        if (parentEmail && parentEmail !== studentEmail) await sendEmail(parentEmail, `Payment Approved for ${payment.fee.student.user.name}`, emailHtml);
       }
     } else {
-      // Rejected – send notification email
+      // REJECTED
       const studentEmail = payment.fee.student.user.email;
       const parentEmail = payment.fee.student.parent?.user?.email;
       const rejectHtml = `
@@ -239,8 +268,8 @@ router.put('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
         <p>Your payment of ₹${payment.amount} (Receipt: ${payment.receiptNo}) has been rejected.</p>
         <p>Please contact the admin for further details.</p>
       `;
-      if (studentEmail) await sendEmail(studentEmail, 'Fee Payment Rejected', rejectHtml);
-      if (parentEmail && parentEmail !== studentEmail) await sendEmail(parentEmail, `Fee Payment Rejected for ${payment.fee.student.user.name}`, rejectHtml);
+      if (studentEmail) await sendEmail(studentEmail, 'Payment Rejected', rejectHtml);
+      if (parentEmail && parentEmail !== studentEmail) await sendEmail(parentEmail, `Payment Rejected for ${payment.fee.student.user.name}`, rejectHtml);
     }
 
     res.json(updatedPayment);
@@ -253,7 +282,6 @@ router.put('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
 // ✅ Download receipt (only after approval)
 router.get('/receipt/:paymentId', auth, async (req, res) => {
   const { paymentId } = req.params;
-
   try {
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
