@@ -5,29 +5,28 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const router = express.Router();
 
+// ----------------------------------------------------------------------
+// 🔒 ADMIN / SUB_ADMIN only routes
+// ----------------------------------------------------------------------
+
 // GET all fees (Admin/SubAdmin only)
 router.get('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
     const fees = await prisma.fee.findMany({
-      include: {
-        student: {
-          include: { user: true }   // includes student.name
-        }
-      },
+      include: { student: { include: { user: true } } },
       orderBy: { dueDate: 'asc' }
     });
     res.json(fees);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST create a new fee record
+// POST create a new fee record (Admin/SubAdmin only)
 router.post('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   const { studentId, totalFees, dueDate } = req.body;
   if (!studentId || !totalFees || !dueDate) {
-    return res.status(400).json({ error: 'Missing required fields: studentId, totalFees, dueDate' });
+    return res.status(400).json({ error: 'Missing required fields' });
   }
   try {
     const fee = await prisma.fee.create({
@@ -41,12 +40,11 @@ router.post('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
     });
     res.status(201).json(fee);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT update a fee record
+// PUT update a fee record (Admin/SubAdmin only)
 router.put('/:id', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   const { id } = req.params;
   const { totalFees, dueDate, status } = req.body;
@@ -60,6 +58,56 @@ router.put('/:id', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
       }
     });
     res.json(fee);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------------------------
+// 👪 PARENT / STUDENT accessible routes (with authorization)
+// ----------------------------------------------------------------------
+
+// GET fees for a specific student (Parents can access their own children, Students can access their own)
+router.get('/student/:studentId', auth, async (req, res) => {
+  const { studentId } = req.params;
+  const user = req.user;
+
+  try {
+    // Fetch the student to verify authorization
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      include: { parent: { include: { user: true } }, user: true }
+    });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    // Authorization logic
+    let isAuthorized = false;
+    if (user.role === 'ADMIN' || user.role === 'SUB_ADMIN') {
+      isAuthorized = true;
+    } else if (user.role === 'STUDENT') {
+      // Student can see only their own fees
+      const currentStudent = await prisma.student.findUnique({ where: { userId: user.id } });
+      if (currentStudent && currentStudent.id === studentId) isAuthorized = true;
+    } else if (user.role === 'PARENT') {
+      // Parent can see fees for their children
+      const parent = await prisma.parent.findUnique({
+        where: { userId: user.id },
+        include: { children: true }
+      });
+      if (parent && parent.children.some(c => c.id === studentId)) isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Forbidden: You cannot view fees for this student' });
+    }
+
+    // Fetch fees for the student
+    const fees = await prisma.fee.findMany({
+      where: { studentId },
+      include: { payments: true }, // optionally include payments
+      orderBy: { dueDate: 'asc' }
+    });
+    res.json(fees);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
