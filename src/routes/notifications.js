@@ -37,6 +37,27 @@ router.get('/unread-count', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, r
   }
 });
 
+// Send a broadcast notification (Admin only)
+router.post('/', auth, roleCheck('ADMIN'), async (req, res) => {
+  const { title, message, targetRole } = req.body;
+  if (!title || !message) {
+    return res.status(400).json({ error: 'Title and message are required.' });
+  }
+  try {
+    const notification = await prisma.notification.create({
+      data: {
+        type: 'ANNOUNCEMENT',
+        title,
+        message,
+        isRead: false,
+      },
+    });
+    res.status(201).json(notification);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Mark notification as read
 router.put('/:id/read', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
   try {
