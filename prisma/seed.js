@@ -287,33 +287,46 @@ async function main() {
     },
   });
 
-  // Payments
+  // Payments (using new schema: no `date`, use `createdAt` auto, `receiptNo` required, add `status`)
   await prisma.payment.create({
     data: {
       feeId: feeForStudent1.id,
       amount: 5000,
-      date: new Date('2025-04-10'),
       method: 'CASH',
       receiptNo: 'RCPT-001',
+      status: 'APPROVED', // approved payment
+      // createdAt will default to now()
     },
   });
   await prisma.payment.create({
     data: {
       feeId: feeForStudent1.id,
       amount: 5000,
-      date: new Date('2025-05-10'),
       method: 'ONLINE',
       receiptNo: 'RCPT-002',
       transactionId: 'TXN123456',
+      status: 'APPROVED',
     },
   });
   await prisma.payment.create({
     data: {
       feeId: feeForStudent2.id,
       amount: 25000,
-      date: new Date('2025-04-01'),
       method: 'CASH',
       receiptNo: 'RCPT-003',
+      status: 'APPROVED',
+    },
+  });
+
+  // Optionally add a PENDING payment to test admin approval flow
+  await prisma.payment.create({
+    data: {
+      feeId: feeForStudent3.id,
+      amount: 5000,
+      method: 'ONLINE',
+      receiptNo: 'RCPT-004',
+      transactionId: 'TXN789012',
+      status: 'PENDING',
     },
   });
 
@@ -495,7 +508,7 @@ async function main() {
     ],
   });
 
-  // 17. Notifications (NEW)
+  // 17. Notifications
   console.log('Creating notifications...');
 
   await prisma.notification.createMany({

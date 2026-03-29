@@ -107,19 +107,24 @@ model Fee {
   totalFees    Float
   paidAmount   Float    @default(0)
   dueDate      DateTime
-  status       String   // PAID, PENDING, OVERDUE
+  status       String   // PAID, PENDING, OVERDUE, PARTIAL
   payments     Payment[]
 }
 
 model Payment {
-  id           String   @id @default(cuid())
-  feeId        String
-  fee          Fee      @relation(fields: [feeId], references: [id])
-  amount       Float
-  date         DateTime @default(now())
-  method       String   // CASH, ONLINE, CARD
-  receiptNo    String   @unique
+  id            String   @id @default(cuid())
+  feeId         String
+  fee           Fee      @relation(fields: [feeId], references: [id], onDelete: Cascade)
+  amount        Float
+  method        String   // CASH, ONLINE, CARD
   transactionId String?
+  receiptNo     String   @unique
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([feeId])
+  @@index([status])
 }
 
 model Video {

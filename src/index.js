@@ -28,29 +28,32 @@ const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 
-// ✅ CORS configuration – allow only your frontend origin
+// ✅ CORS configuration – allow multiple origins including mobile apps
 const allowedOrigins = [
   'https://my-chhota-school.vercel.app',
-  'http://localhost:3000',      // local dev
-  'http://localhost:5173',      // Vite default
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8081', // React Native Metro bundler
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl)
+    // Allow requests with no origin (like mobile apps, Postman, or curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,   // if you use cookies or authorization headers
+  credentials: true,
 }));
 
-app.use(express.json());
+// Body parsing middleware with increased limit for large payloads (e.g., video URLs, notes)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Routes
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/students', studentRoutes);
@@ -75,9 +78,23 @@ app.use('/api/diary', diaryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 
+// Health check / root endpoint
 app.get('/', (req, res) => {
-  res.send('LMS API is running');
+  res.json({ message: 'LMS API is running', status: 'OK' });
+});
+
+// 404 handler for undefined routes
+app.use((req, res) => {
+  res.status(404).json({ error: `Cannot ${req.method} ${req.originalUrl}` });
+});
+
+// Global error handler (must be last)
+app.use((err, req, res, next) => {
+  console.error('Global error:', err);
+  const status = err.status || 500;
+  const message = err.message || 'Internal Server Error';
+  res.status(status).json({ error: message });
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
