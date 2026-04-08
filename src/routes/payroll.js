@@ -24,15 +24,17 @@ router.get('/me', auth, roleCheck('SUB_ADMIN'), async (req, res) => {
 // Add payroll (Admin)
 router.post('/', auth, roleCheck('ADMIN'), async (req, res) => {
   const { teacherId, month, year, amount, deductions } = req.body;
-  const netAmount = amount - (deductions || 0);
+  const parsedAmount = parseFloat(amount);
+  const parsedDeductions = parseFloat(deductions) || 0;
+  const netAmount = parsedAmount - parsedDeductions;
   try {
     const payroll = await prisma.payroll.create({
       data: {
         teacherId,
-        month,
-        year,
-        amount,
-        deductions: deductions || 0,
+        month: parseInt(month),
+        year: parseInt(year),
+        amount: parsedAmount,
+        deductions: parsedDeductions,
         netAmount,
         paid: false,
       },

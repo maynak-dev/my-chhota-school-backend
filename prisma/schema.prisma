@@ -101,14 +101,15 @@ model Attendance {
 }
 
 model Fee {
-  id           String   @id @default(cuid())
-  studentId    String
-  student      Student  @relation(fields: [studentId], references: [id])
-  totalFees    Float
-  paidAmount   Float    @default(0)
-  dueDate      DateTime
-  status       String   // PAID, PENDING, OVERDUE, PARTIAL
-  payments     Payment[]
+  id              String   @id @default(cuid())
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id])
+  totalFees       Float
+  paidAmount      Float    @default(0)
+  dueDate         DateTime
+  status          String   // PAID, PENDING, OVERDUE, PARTIAL
+  reminderSentAt  DateTime? // Track when last reminder was sent
+  payments        Payment[]
 }
 
 model Payment {

@@ -8,6 +8,7 @@ async function main() {
 
   // Clear existing data in correct order (due to foreign keys)
   await prisma.$transaction([
+    prisma.notification.deleteMany(),
     prisma.payment.deleteMany(),
     prisma.fee.deleteMany(),
     prisma.result.deleteMany(),
@@ -230,7 +231,7 @@ async function main() {
     });
   }
 
-  // 8. Create Attendance for last 5 days (including today)
+  // 8. Create Attendance for last 5 days
   console.log('Creating attendance...');
 
   const today = new Date();
@@ -259,15 +260,19 @@ async function main() {
   // 9. Create Fees and Payments
   console.log('Creating fees and payments...');
 
+  // ✅ student1 — partially paid, reminder NOT yet sent
   const feeForStudent1 = await prisma.fee.create({
     data: {
       studentId: student1.id,
       totalFees: 25000,
       paidAmount: 10000,
-      dueDate: new Date('2025-06-30'),
-      status: 'PENDING',
+      dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // due in 2 days — will trigger reminder
+      status: 'PARTIAL',
+      reminderSentAt: null, // ✅ not reminded yet — scheduler will pick this up
     },
   });
+
+  // ✅ student2 — fully paid, no reminder needed
   const feeForStudent2 = await prisma.fee.create({
     data: {
       studentId: student2.id,
@@ -275,27 +280,30 @@ async function main() {
       paidAmount: 25000,
       dueDate: new Date('2025-05-31'),
       status: 'PAID',
+      reminderSentAt: null,
     },
   });
+
+  // ✅ student3 — pending, reminder already sent (won't be reminded again)
   const feeForStudent3 = await prisma.fee.create({
     data: {
       studentId: student3.id,
       totalFees: 28000,
       paidAmount: 0,
-      dueDate: new Date('2025-07-15'),
+      dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), // due tomorrow
       status: 'PENDING',
+      reminderSentAt: new Date(), // ✅ already reminded — scheduler will skip this
     },
   });
 
-  // Payments (using new schema: no `date`, use `createdAt` auto, `receiptNo` required, add `status`)
+  // Payments
   await prisma.payment.create({
     data: {
       feeId: feeForStudent1.id,
       amount: 5000,
       method: 'CASH',
       receiptNo: 'RCPT-001',
-      status: 'APPROVED', // approved payment
-      // createdAt will default to now()
+      status: 'APPROVED',
     },
   });
   await prisma.payment.create({
@@ -317,8 +325,7 @@ async function main() {
       status: 'APPROVED',
     },
   });
-
-  // Optionally add a PENDING payment to test admin approval flow
+  // Pending payment to test admin approval flow
   await prisma.payment.create({
     data: {
       feeId: feeForStudent3.id,
@@ -508,7 +515,111 @@ async function main() {
     ],
   });
 
-  // 17. Notifications
+  // 17. Leave Requests
+  console.log('Creating leave requests...');
+
+  await prisma.leave.createMany({
+    data: [
+      {
+        teacherId: teacher1.id,
+        startDate: new Date('2025-05-10'),
+        endDate: new Date('2025-05-11'),
+        reason: 'Medical appointment',
+        status: 'APPROVED',
+      },
+      {
+        teacherId: teacher2.id,
+        startDate: new Date('2025-05-20'),
+        endDate: new Date('2025-05-21'),
+        reason: 'Family function',
+        status: 'PENDING',
+      },
+    ],
+  });
+
+  // 18. Payroll
+  console.log('Creating payroll entries...');
+
+  await prisma.payroll.createMany({
+    data: [
+      {
+        teacherId: teacher1.id,
+        month: 4,
+        year: 2025,
+        amount: 35000,
+        deductions: 2000,
+        netAmount: 33000,
+        paid: true,
+        paidAt: new Date('2025-04-30'),
+      },
+      {
+        teacherId: teacher2.id,
+        month: 4,
+        year: 2025,
+        amount: 38000,
+        deductions: 2500,
+        netAmount: 35500,
+        paid: true,
+        paidAt: new Date('2025-04-30'),
+      },
+      {
+        teacherId: teacher1.id,
+        month: 5,
+        year: 2025,
+        amount: 35000,
+        deductions: 2000,
+        netAmount: 33000,
+        paid: false,
+      },
+      {
+        teacherId: teacher2.id,
+        month: 5,
+        year: 2025,
+        amount: 38000,
+        deductions: 2500,
+        netAmount: 35500,
+        paid: false,
+      },
+    ],
+  });
+
+  // 19. Expenses
+  console.log('Creating expenses...');
+
+  await prisma.expense.createMany({
+    data: [
+      {
+        description: 'Classroom furniture repair',
+        amount: 5000,
+        date: new Date('2025-04-05'),
+        category: 'Maintenance',
+        createdBy: admin.id,
+      },
+      {
+        description: 'Electricity bill - April',
+        amount: 8500,
+        date: new Date('2025-04-10'),
+        category: 'Utilities',
+        createdBy: admin.id,
+      },
+      {
+        description: 'Stationery and supplies',
+        amount: 3200,
+        date: new Date('2025-04-15'),
+        category: 'Supplies',
+        createdBy: admin.id,
+      },
+      {
+        description: 'Internet bill - April',
+        amount: 1500,
+        date: new Date('2025-04-10'),
+        category: 'Utilities',
+        createdBy: admin.id,
+      },
+    ],
+  });
+
+  // 20. Notifications
   console.log('Creating notifications...');
 
   await prisma.notification.createMany({
@@ -532,10 +643,10 @@ async function main() {
       {
         type: 'FEE_PAYMENT',
         title: 'Fee Reminder',
-        message: `Your fee of ₹${feeForStudent1.totalFees - feeForStudent1.paidAmount} is due by ${feeForStudent1.dueDate.toLocaleDateString()}.`,
+        message: `Fee of ₹${25000 - 10000} for Alice Johnson is due soon.`,
         studentId: student1.id,
         studentName: student1User.name,
-        amount: feeForStudent1.totalFees - feeForStudent1.paidAmount,
+        amount: 15000,
         isRead: false,
         createdAt: new Date('2025-04-15'),
       },
@@ -547,10 +658,28 @@ async function main() {
         isRead: true,
         createdAt: new Date('2025-04-20'),
       },
+      {
+        type: 'ANNOUNCEMENT',
+        title: 'Exam Schedule Released',
+        message: 'Mid-term exams start June 15th. Download the full schedule from the portal.',
+        targetRole: 'STUDENT',
+        isRead: false,
+        createdAt: new Date('2025-04-25'),
+      },
     ],
   });
 
-  console.log('✅ Seeding completed!');
+  console.log('✅ Seeding completed successfully!');
+  console.log('');
+  console.log('📋 Login credentials (all passwords: password123)');
+  console.log('   Admin    → admin@lms.com');
+  console.log('   Teacher1 → teacher1@lms.com');
+  console.log('   Teacher2 → teacher2@lms.com');
+  console.log('   Parent1  → parent1@lms.com');
+  console.log('   Parent2  → parent2@lms.com');
+  console.log('   Student1 → student1@lms.com');
+  console.log('   Student2 → student2@lms.com');
+  console.log('   Student3 → student3@lms.com');
 }
 
 main()

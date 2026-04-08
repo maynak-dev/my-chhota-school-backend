@@ -92,4 +92,21 @@ router.delete('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
   }
 });
 
+// GET /api/students/my-profile  — logged-in student's own profile
+router.get('/my-profile', auth, async (req, res) => {
+  try {
+    const student = await prisma.student.findUnique({
+      where: { userId: req.user.id },
+      include: {
+        user: true,
+        batch: { include: { course: true } },
+      },
+    });
+    if (!student) return res.status(404).json({ error: 'Student profile not found' });
+    res.json(student);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -60,4 +60,43 @@ router.delete('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
   }
 });
 
+// GET /api/exams — all exams (ADMIN/SUB_ADMIN)
+router.get('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
+  try {
+    const exams = await prisma.exam.findMany({
+      include: { batch: true },
+      orderBy: { date: 'desc' },
+    });
+    res.json(exams);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/exams — create exam (ADMIN/SUB_ADMIN)
+router.post('/', auth, roleCheck('ADMIN', 'SUB_ADMIN'), async (req, res) => {
+  const { name, date, maxMarks, batchId } = req.body;
+  if (!name || !date || !maxMarks || !batchId)
+    return res.status(400).json({ error: 'Missing required fields' });
+  try {
+    const exam = await prisma.exam.create({
+      data: { name, date: new Date(date), maxMarks: parseInt(maxMarks), batchId },
+      include: { batch: true },
+    });
+    res.status(201).json(exam);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/exams/:id
+router.delete('/:id', auth, roleCheck('ADMIN'), async (req, res) => {
+  try {
+    await prisma.exam.delete({ where: { id: req.params.id } });
+    res.json({ message: 'Exam deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

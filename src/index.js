@@ -98,5 +98,25 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: message });
 });
 
+// Fee reminder scheduler — runs every day at 8:00 AM
+const { sendFeeReminders } = require('./utils/feeReminder');
+
+function scheduleDailyReminder() {
+  const now = new Date();
+  const nextRun = new Date();
+  nextRun.setHours(8, 0, 0, 0);
+  if (nextRun <= now) nextRun.setDate(nextRun.getDate() + 1);
+  const msUntilNextRun = nextRun.getTime() - now.getTime();
+
+  setTimeout(() => {
+    sendFeeReminders();
+    setInterval(sendFeeReminders, 24 * 60 * 60 * 1000); // repeat every 24h
+  }, msUntilNextRun);
+
+  console.log(`[FeeReminder] Scheduled. Next run at ${nextRun.toLocaleString()}`);
+}
+
+scheduleDailyReminder();
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
