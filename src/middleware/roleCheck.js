@@ -7,4 +7,4 @@ const roleCheck = (roles) => {
   };
 };
 
-module.exports = { roleCheck };
+module.exports = roleCheck;
