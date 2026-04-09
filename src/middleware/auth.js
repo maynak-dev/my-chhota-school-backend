@@ -1,8 +1,9 @@
+// src/middleware/auth.js
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-module.exports = async (req, res, next) => {
+const authenticate = async (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
 
@@ -16,3 +17,6 @@ module.exports = async (req, res, next) => {
     res.status(401).json({ error: 'Invalid token.' });
   }
 };
+
+module.exports = authenticate;
+module.exports.authenticate = authenticate;
