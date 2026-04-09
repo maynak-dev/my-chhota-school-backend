@@ -69,7 +69,7 @@ model Parent {
 model Batch {
   id           String   @id @default(cuid())
   name         String
-  courseId     String
+  courseId      String
   course       Course   @relation(fields: [courseId], references: [id])
   startDate    DateTime
   endDate      DateTime?
@@ -81,6 +81,8 @@ model Batch {
   timetable    Timetable[]
   assignments  Assignment[]
   exams        Exam[]
+  liveClasses  LiveClass[]
+  onlineExams  OnlineExam[]
 }
 
 model Course {
@@ -88,6 +90,7 @@ model Course {
   name         String
   description  String?
   batches      Batch[]
+  modules      Module[]
 }
 
 model Attendance {
@@ -108,8 +111,9 @@ model Fee {
   paidAmount      Float    @default(0)
   dueDate         DateTime
   status          String   // PAID, PENDING, OVERDUE, PARTIAL
-  reminderSentAt  DateTime? // Track when last reminder was sent
+  reminderSentAt  DateTime?
   payments        Payment[]
+  emiPlans        EMIPlan[]
 }
 
 model Payment {
@@ -134,9 +138,10 @@ model Video {
   url          String
   batchId      String
   batch        Batch    @relation(fields: [batchId], references: [id])
-  uploadedBy   String   // userId
+  uploadedBy   String
   duration     Int?
   createdAt    DateTime @default(now())
+  engagements  VideoEngagement[]
 }
 
 model Note {
@@ -154,7 +159,7 @@ model Announcement {
   id           String   @id @default(cuid())
   title        String
   content      String
-  targetRole   Role?    // null = all
+  targetRole   Role?
   createdBy    String
   creator      User     @relation("CreatedBy", fields: [createdBy], references: [id])
   createdAt    DateTime @default(now())
@@ -166,7 +171,7 @@ model Timetable {
   batch        Batch    @relation(fields: [batchId], references: [id])
   day          String   // MONDAY, TUESDAY, ...
   subject      String
-  startTime    String   // "09:00"
+  startTime    String
   endTime      String
   teacherId    String?
   teacher      Teacher? @relation(fields: [teacherId], references: [id])
@@ -180,7 +185,7 @@ model Assignment {
   fileUrl      String?
   batchId      String
   batch        Batch    @relation(fields: [batchId], references: [id])
-  createdBy    String   // teacherId
+  createdBy    String
   teacher      Teacher  @relation(fields: [createdBy], references: [id])
   createdAt    DateTime @default(now())
 }
@@ -234,7 +239,7 @@ model Expense {
   amount       Float
   date         DateTime @default(now())
   category     String
-  createdBy    String   // userId
+  createdBy    String
 }
 
 model StudentDiary {
@@ -244,7 +249,7 @@ model StudentDiary {
   date         DateTime @default(now())
   content      String
   type         String   // HOMEWORK, REMARK, BEHAVIOR
-  createdBy    String   // teacherId
+  createdBy    String
 }
 
 model Notification {
@@ -253,7 +258,7 @@ model Notification {
   title       String
   message     String
   isRead      Boolean  @default(false)
-  targetRole  Role?    // optional, if null → all users
+  targetRole  Role?
   paymentId   String?
   studentId   String?
   studentName String?
@@ -264,7 +269,7 @@ model Notification {
 // ─── RBAC & Activity Logs ───────────────────────────────────────────────
 model Permission {
   id          String   @id @default(cuid())
-  name        String   @unique // e.g., "manage_users", "view_reports"
+  name        String   @unique
   description String?
   createdAt   DateTime @default(now())
   roles       RolePermission[]
@@ -281,8 +286,8 @@ model RolePermission {
 model ActivityLog {
   id         String   @id @default(cuid())
   userId     String
-  action     String   // CREATE, UPDATE, DELETE, LOGIN, LOGOUT
-  entity     String   // User, Student, Fee, etc.
+  action     String
+  entity     String
   entityId   String?
   details    Json?
   ipAddress  String?
@@ -299,8 +304,8 @@ model Module {
   title          String
   description    String?
   order          Int      @default(0)
-  dripDate       DateTime?  // Drip content scheduling
-  prerequisiteId String?    // Prerequisite module
+  dripDate       DateTime?
+  prerequisiteId String?
   prerequisite   Module?    @relation("ModulePrerequisite", fields: [prerequisiteId], references: [id])
   dependents     Module[]   @relation("ModulePrerequisite")
   lessons        Lesson[]
@@ -312,15 +317,12 @@ model Lesson {
   moduleId    String
   module      Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   title       String
-  content     String?  // Rich text / HTML
+  content     String?
   videoUrl    String?
-  duration    Int?     // in seconds
+  duration    Int?
   order       Int      @default(0)
   createdAt   DateTime @default(now())
 }
-
-// Update Course model - add this relation:
-// modules Module[] 
 
 // ─── Video Engagement Analytics ─────────────────────────────────────────
 model VideoEngagement {
@@ -328,14 +330,12 @@ model VideoEngagement {
   videoId     String
   video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
   studentId   String
-  watchTime   Int      @default(0)  // seconds watched
+  watchTime   Int      @default(0)
   completed   Boolean  @default(false)
-  dropOffAt   Int?     // second where student stopped
+  dropOffAt   Int?
   lastWatched DateTime @default(now())
   @@unique([videoId, studentId])
 }
-
-// Add to Video model: engagements VideoEngagement[]
 
 // ─── Live Classes ───────────────────────────────────────────────────────
 model LiveClass {
@@ -344,13 +344,13 @@ model LiveClass {
   description   String?
   batchId       String
   batch         Batch    @relation(fields: [batchId], references: [id])
-  hostId        String   // teacherId
-  platform      String   // ZOOM, GOOGLE_MEET, WEBRTC
+  hostId        String
+  platform      String
   meetingUrl    String?
   meetingId     String?
   scheduledAt   DateTime
-  duration      Int      // minutes
-  status        String   @default("SCHEDULED") // SCHEDULED, LIVE, ENDED, CANCELLED
+  duration      Int
+  status        String   @default("SCHEDULED")
   recordingUrl  String?
   createdAt     DateTime @default(now())
   chats         LiveChat[]
@@ -383,13 +383,11 @@ model LivePoll {
   liveClassId String
   liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
   question    String
-  options     Json     // ["Option A", "Option B", ...]
-  responses   Json?    // { "userId": "optionIndex", ... }
+  options     Json
+  responses   Json?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 }
-
-// Add to Batch model: liveClasses LiveClass[]
 
 // ─── Doubt / Discussion Forum ───────────────────────────────────────────
 model Discussion {
@@ -413,7 +411,7 @@ model DiscussionReply {
   userId       String
   userName     String
   userRole     Role
-  parentId     String?    // For threaded replies
+  parentId     String?
   parent       DiscussionReply?  @relation("ReplyThread", fields: [parentId], references: [id])
   children     DiscussionReply[] @relation("ReplyThread")
   createdAt    DateTime   @default(now())
@@ -435,7 +433,7 @@ model SubscriptionPlan {
   id          String   @id @default(cuid())
   name        String
   amount      Float
-  duration    Int      // months
+  duration    Int
   description String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -444,9 +442,9 @@ model SubscriptionPlan {
 model Coupon {
   id          String   @id @default(cuid())
   code        String   @unique
-  discountType String  // PERCENTAGE, FIXED
+  discountType String
   discountValue Float
-  maxUses     Int      @default(0) // 0 = unlimited
+  maxUses     Int      @default(0)
   usedCount   Int      @default(0)
   validFrom   DateTime
   validTo     DateTime
@@ -465,16 +463,14 @@ model EMIPlan {
   createdAt     DateTime @default(now())
 }
 
-// Add to Fee model: emiPlans EMIPlan[]
-
 // ─── MCQ Test Engine ────────────────────────────────────────────────────
 model QuestionBank {
   id          String   @id @default(cuid())
   courseId    String
   question    String
-  options     Json     // ["A", "B", "C", "D"]
-  correctIndex Int     // 0-3
-  difficulty  String   @default("MEDIUM") // EASY, MEDIUM, HARD
+  options     Json
+  correctIndex Int
+  difficulty  String   @default("MEDIUM")
   tags        String?
   createdAt   DateTime @default(now())
 }
@@ -484,10 +480,10 @@ model OnlineExam {
   title          String
   batchId        String
   batch          Batch    @relation(fields: [batchId], references: [id])
-  duration       Int      // minutes (timer-based)
+  duration       Int
   totalMarks     Int
   randomize      Boolean  @default(false)
-  proctoring     Boolean  @default(false) // tab switch detection
+  proctoring     Boolean  @default(false)
   startTime      DateTime
   endTime        DateTime
   questions      ExamQuestion[]
@@ -512,22 +508,20 @@ model ExamSubmission {
   examId       String
   exam         OnlineExam @relation(fields: [examId], references: [id], onDelete: Cascade)
   studentId    String
-  answers      Json       // { "questionId": selectedIndex, ... }
+  answers      Json
   score        Float?
-  tabSwitches  Int        @default(0) // proctoring
+  tabSwitches  Int        @default(0)
   submittedAt  DateTime   @default(now())
   @@unique([examId, studentId])
 }
-
-// Add to Batch model: onlineExams OnlineExam[]
 
 // ─── Gamification ───────────────────────────────────────────────────────
 model Badge {
   id          String   @id @default(cuid())
   name        String
   description String
-  icon        String?  // emoji or URL
-  criteria    String   // e.g., "complete_5_courses"
+  icon        String?
+  criteria    String
   studentBadges StudentBadge[]
 }
 
@@ -564,7 +558,7 @@ model ParentMeeting {
   parentId    String
   teacherId   String
   scheduledAt DateTime
-  status      String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  status      String   @default("SCHEDULED")
   notes       String?
   createdAt   DateTime @default(now())
 }
@@ -573,9 +567,9 @@ model ParentMeeting {
 model NotificationRule {
   id          String   @id @default(cuid())
   name        String
-  trigger     String   // LOW_ATTENDANCE, FEE_DUE, MISSED_CLASS, LOW_PERFORMANCE
-  condition   Json     // e.g., { "threshold": 75, "daysBefore": 3 }
-  template    String   // Message template with {{variables}}
+  trigger     String
+  condition   Json
+  template    String
   targetRole  Role?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -585,8 +579,8 @@ model NotificationRule {
 model DataAccessLog {
   id         String   @id @default(cuid())
   userId     String
-  resource   String   // "student_records", "fee_data", etc.
-  action     String   // VIEW, EXPORT, DOWNLOAD
+  resource   String
+  action     String
   details    Json?
   ipAddress  String?
   createdAt  DateTime @default(now())
