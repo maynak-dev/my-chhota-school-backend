@@ -260,3 +260,335 @@ model Notification {
   amount      Float?
   createdAt   DateTime @default(now())
 }
+
+// ─── RBAC & Activity Logs ───────────────────────────────────────────────
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique // e.g., "manage_users", "view_reports"
+  description String?
+  createdAt   DateTime @default(now())
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  role         Role
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  @@unique([role, permissionId])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String   // CREATE, UPDATE, DELETE, LOGIN, LOGOUT
+  entity     String   // User, Student, Fee, etc.
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ─── Course Hierarchy: Module & Lesson ──────────────────────────────────
+model Module {
+  id            String   @id @default(cuid())
+  courseId       String
+  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  order          Int      @default(0)
+  dripDate       DateTime?  // Drip content scheduling
+  prerequisiteId String?    // Prerequisite module
+  prerequisite   Module?    @relation("ModulePrerequisite", fields: [prerequisiteId], references: [id])
+  dependents     Module[]   @relation("ModulePrerequisite")
+  lessons        Lesson[]
+  createdAt      DateTime @default(now())
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  moduleId    String
+  module      Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title       String
+  content     String?  // Rich text / HTML
+  videoUrl    String?
+  duration    Int?     // in seconds
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// Update Course model - add this relation:
+// modules Module[] 
+
+// ─── Video Engagement Analytics ─────────────────────────────────────────
+model VideoEngagement {
+  id          String   @id @default(cuid())
+  videoId     String
+  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  studentId   String
+  watchTime   Int      @default(0)  // seconds watched
+  completed   Boolean  @default(false)
+  dropOffAt   Int?     // second where student stopped
+  lastWatched DateTime @default(now())
+  @@unique([videoId, studentId])
+}
+
+// Add to Video model: engagements VideoEngagement[]
+
+// ─── Live Classes ───────────────────────────────────────────────────────
+model LiveClass {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  batchId       String
+  batch         Batch    @relation(fields: [batchId], references: [id])
+  hostId        String   // teacherId
+  platform      String   // ZOOM, GOOGLE_MEET, WEBRTC
+  meetingUrl    String?
+  meetingId     String?
+  scheduledAt   DateTime
+  duration      Int      // minutes
+  status        String   @default("SCHEDULED") // SCHEDULED, LIVE, ENDED, CANCELLED
+  recordingUrl  String?
+  createdAt     DateTime @default(now())
+  chats         LiveChat[]
+  polls         LivePoll[]
+  handRaises    HandRaise[]
+}
+
+model LiveChat {
+  id          String   @id @default(cuid())
+  liveClassId String
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+  userId      String
+  userName    String
+  message     String
+  createdAt   DateTime @default(now())
+}
+
+model HandRaise {
+  id          String   @id @default(cuid())
+  liveClassId String
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+  userId      String
+  userName    String
+  resolved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model LivePoll {
+  id          String   @id @default(cuid())
+  liveClassId String
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+  question    String
+  options     Json     // ["Option A", "Option B", ...]
+  responses   Json?    // { "userId": "optionIndex", ... }
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+// Add to Batch model: liveClasses LiveClass[]
+
+// ─── Doubt / Discussion Forum ───────────────────────────────────────────
+model Discussion {
+  id          String   @id @default(cuid())
+  courseId    String
+  title       String
+  body        String
+  userId      String
+  userName    String
+  userRole    Role
+  replies     DiscussionReply[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model DiscussionReply {
+  id           String     @id @default(cuid())
+  discussionId String
+  discussion   Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  body         String
+  userId       String
+  userName     String
+  userRole     Role
+  parentId     String?    // For threaded replies
+  parent       DiscussionReply?  @relation("ReplyThread", fields: [parentId], references: [id])
+  children     DiscussionReply[] @relation("ReplyThread")
+  createdAt    DateTime   @default(now())
+}
+
+// ─── Chat (Student-Teacher) ────────────────────────────────────────────
+model ChatMessage {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  message    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  @@index([senderId, receiverId])
+}
+
+// ─── Fee Enhancements: Subscriptions, Coupons, EMI ─────────────────────
+model SubscriptionPlan {
+  id          String   @id @default(cuid())
+  name        String
+  amount      Float
+  duration    Int      // months
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model Coupon {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  discountType String  // PERCENTAGE, FIXED
+  discountValue Float
+  maxUses     Int      @default(0) // 0 = unlimited
+  usedCount   Int      @default(0)
+  validFrom   DateTime
+  validTo     DateTime
+  isActive    Boolean  @default(true)
+}
+
+model EMIPlan {
+  id            String   @id @default(cuid())
+  feeId         String
+  fee           Fee      @relation(fields: [feeId], references: [id], onDelete: Cascade)
+  totalAmount   Float
+  installments  Int
+  amountPerEMI  Float
+  paidCount     Int      @default(0)
+  nextDueDate   DateTime
+  createdAt     DateTime @default(now())
+}
+
+// Add to Fee model: emiPlans EMIPlan[]
+
+// ─── MCQ Test Engine ────────────────────────────────────────────────────
+model QuestionBank {
+  id          String   @id @default(cuid())
+  courseId    String
+  question    String
+  options     Json     // ["A", "B", "C", "D"]
+  correctIndex Int     // 0-3
+  difficulty  String   @default("MEDIUM") // EASY, MEDIUM, HARD
+  tags        String?
+  createdAt   DateTime @default(now())
+}
+
+model OnlineExam {
+  id             String   @id @default(cuid())
+  title          String
+  batchId        String
+  batch          Batch    @relation(fields: [batchId], references: [id])
+  duration       Int      // minutes (timer-based)
+  totalMarks     Int
+  randomize      Boolean  @default(false)
+  proctoring     Boolean  @default(false) // tab switch detection
+  startTime      DateTime
+  endTime        DateTime
+  questions      ExamQuestion[]
+  submissions    ExamSubmission[]
+  createdAt      DateTime @default(now())
+}
+
+model ExamQuestion {
+  id           String     @id @default(cuid())
+  examId       String
+  exam         OnlineExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questionBankId String?
+  question     String
+  options      Json
+  correctIndex Int
+  marks        Int        @default(1)
+  order        Int        @default(0)
+}
+
+model ExamSubmission {
+  id           String     @id @default(cuid())
+  examId       String
+  exam         OnlineExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId    String
+  answers      Json       // { "questionId": selectedIndex, ... }
+  score        Float?
+  tabSwitches  Int        @default(0) // proctoring
+  submittedAt  DateTime   @default(now())
+  @@unique([examId, studentId])
+}
+
+// Add to Batch model: onlineExams OnlineExam[]
+
+// ─── Gamification ───────────────────────────────────────────────────────
+model Badge {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  icon        String?  // emoji or URL
+  criteria    String   // e.g., "complete_5_courses"
+  studentBadges StudentBadge[]
+}
+
+model StudentBadge {
+  id        String   @id @default(cuid())
+  studentId String
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id])
+  earnedAt  DateTime @default(now())
+  @@unique([studentId, badgeId])
+}
+
+model StudentStreak {
+  id           String   @id @default(cuid())
+  studentId    String   @unique
+  currentStreak Int     @default(0)
+  longestStreak Int     @default(0)
+  lastActiveDate DateTime?
+}
+
+model Certificate {
+  id          String   @id @default(cuid())
+  studentId   String
+  courseId     String
+  courseName  String
+  studentName String
+  issuedAt    DateTime @default(now())
+  certificateUrl String?
+}
+
+// ─── Parent Engagement ──────────────────────────────────────────────────
+model ParentMeeting {
+  id          String   @id @default(cuid())
+  parentId    String
+  teacherId   String
+  scheduledAt DateTime
+  status      String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+// ─── Rule-Based Notification Engine ────────────────────────────────────
+model NotificationRule {
+  id          String   @id @default(cuid())
+  name        String
+  trigger     String   // LOW_ATTENDANCE, FEE_DUE, MISSED_CLASS, LOW_PERFORMANCE
+  condition   Json     // e.g., { "threshold": 75, "daysBefore": 3 }
+  template    String   // Message template with {{variables}}
+  targetRole  Role?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+// ─── Data Access Tracking (Security) ───────────────────────────────────
+model DataAccessLog {
+  id         String   @id @default(cuid())
+  userId     String
+  resource   String   // "student_records", "fee_data", etc.
+  action     String   // VIEW, EXPORT, DOWNLOAD
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  @@index([userId, createdAt])
+}

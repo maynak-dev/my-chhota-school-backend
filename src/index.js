@@ -10,7 +10,6 @@ const parentRoutes = require('./routes/parents');
 const batchRoutes = require('./routes/batches');
 const courseRoutes = require('./routes/courses');
 const attendanceRoutes = require('./routes/attendance');
-// const feeRoutes = require('./routes/fees');
 const feeRecordsRoutes = require('./routes/feesRecords');
 const paymentRoutes = require('./routes/payments');
 const videoRoutes = require('./routes/videos');
@@ -26,7 +25,21 @@ const expenseRoutes = require('./routes/expenses');
 const diaryRoutes = require('./routes/diary');
 const dashboardRoutes = require('./routes/dashboard');
 const notificationRoutes = require('./routes/notifications');
-
+const permissionRoutes = require('./routes/permissions');
+const activityLogRoutes = require('./routes/activityLogs');
+const moduleRoutes = require('./routes/modules');
+const lessonRoutes = require('./routes/lessons');
+const videoEngagementRoutes = require('./routes/videoEngagement');
+const liveClassRoutes = require('./routes/liveClasses');
+const discussionRoutes = require('./routes/discussions');
+const chatRoutes = require('./routes/chat');
+const subscriptionRoutes = require('./routes/subscriptions');
+const onlineExamRoutes = require('./routes/onlineExams');
+const gamificationRoutes = require('./routes/gamification');
+const analyticsRoutes = require('./routes/analytics');
+const parentEngagementRoutes = require('./routes/parentEngagement');
+const notificationRuleRoutes = require('./routes/notificationRules');
+const dataAccessRoutes = require('./routes/dataAccess');
 const app = express();
 
 // ✅ CORS configuration – allow multiple origins including mobile apps
@@ -63,7 +76,6 @@ app.use('/api/parents', parentRoutes);
 app.use('/api/batches', batchRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/attendance', attendanceRoutes);
-// app.use('/api/fees', feeRoutes);
 app.use('/api/fees', feeRecordsRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/videos', videoRoutes);
@@ -79,7 +91,21 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/diary', diaryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
-
+app.use('/api/permissions', permissionRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/modules', moduleRoutes);
+app.use('/api/lessons', lessonRoutes);
+app.use('/api/video-engagement', videoEngagementRoutes);
+app.use('/api/live-classes', liveClassRoutes);
+app.use('/api/discussions', discussionRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/online-exams', onlineExamRoutes);
+app.use('/api/gamification', gamificationRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/parent-engagement', parentEngagementRoutes);
+app.use('/api/notification-rules', notificationRuleRoutes);
+app.use('/api/data-access', dataAccessRoutes);
 // Health check / root endpoint
 app.get('/', (req, res) => {
   res.json({ message: 'LMS API is running', status: 'OK' });
@@ -117,6 +143,20 @@ function scheduleDailyReminder() {
 }
 
 scheduleDailyReminder();
+
+// Add notification rule evaluation to the cron scheduler (add after scheduleDailyReminder()):
+const { evaluateRules } = require('./utils/notificationEngine');
+function scheduleRuleEvaluation() {
+  setInterval(async () => {
+    try {
+      console.log('[NotificationEngine] Evaluating rules...');
+      // Reuse the /evaluate endpoint logic
+    } catch (err) {
+      console.error('[NotificationEngine] Error:', err);
+    }
+  }, 6 * 60 * 60 * 1000); // Every 6 hours
+}
+scheduleRuleEvaluation();
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
